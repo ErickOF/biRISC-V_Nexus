@@ -37,6 +37,16 @@ module biriscv_exec
     ,input  [  4:0]  opcode_rb_idx_i
     ,input  [ 31:0]  opcode_ra_operand_i
     ,input  [ 31:0]  opcode_rb_operand_i
+    // pr_rd_i:
+    //   Connected from issue/rename metadata in top-level core wiring.
+    //   Carries the physical destination register assigned to this ALU op.
+    //   Used so completion updates PRF/CDB by physical tag, not only arch rd.
+    ,input  [  5:0]  pr_rd_i
+    // rob_tag_i:
+    //   Connected from ROB dispatch-tag path in top-level integration.
+    //   Identifies the in-flight ROB entry owning this operation.
+    //   Used so completion marks the correct ROB slot as ready.
+    ,input  [  4:0]  rob_tag_i
     ,input           hold_i
 
     // Outputs
@@ -52,6 +62,22 @@ module biriscv_exec
     ,output [ 31:0]  branch_d_pc_o
     ,output [  1:0]  branch_d_priv_o
     ,output [ 31:0]  writeback_value_o
+    // cdb_val_o:
+    //   Connected to core-level CDB value arbitration.
+    //   Publishes ALU result payload for dependent wakeups / PRF writeback.
+    ,output [ 31:0]  cdb_val_o
+    // cdb_pr_rd_o:
+    //   Connected to CDB physical-destination tag bus.
+    //   Identifies which PRF entry receives cdb_val_o.
+    ,output [  5:0]  cdb_pr_rd_o
+    // cdb_rob_tag_o:
+    //   Connected to CDB ROB-tag bus consumed by ROB completion logic.
+    //   Identifies which ROB entry completed in this cycle.
+    ,output [  4:0]  cdb_rob_tag_o
+    // cdb_valid_o:
+    //   Connected to CDB valid arbitration/selection logic.
+    //   Qualifies cdb value/tag payload as a real completion event.
+    ,output          cdb_valid_o
 );
 
 
@@ -242,13 +268,41 @@ u_alu
 // Flop ALU output
 //-------------------------------------------------------------
 reg [31:0] result_q;
+// Registered completion metadata aligned with result_q.
+// Source: pr_rd_i / rob_tag_i at accepted execute stage.
+// Sink: cdb_pr_rd_o / cdb_rob_tag_o to PRF+ROB completion consumers.
+reg [5:0]  cdb_pr_rd_q;
+reg [4:0]  cdb_rob_tag_q;
+reg        cdb_valid_q;
 always @ (posedge clk_i or posedge rst_i)
 if (rst_i)
+begin
     result_q  <= 32'b0;
+    cdb_pr_rd_q  <= 6'b0;
+    cdb_rob_tag_q<= 5'b0;
+    cdb_valid_q  <= 1'b0;
+end
 else if (~hold_i)
+begin
+    // Metadata and value are sampled together when pipeline stage advances.
+    // This preserves identity alignment for multi-sink CDB consumers.
     result_q <= alu_p_w;
+    cdb_pr_rd_q   <= pr_rd_i;
+    cdb_rob_tag_q <= rob_tag_i;
+    cdb_valid_q   <= opcode_valid_i & ~opcode_invalid_i;
+end
 
 assign writeback_value_o  = result_q;
+// CDB connectivity map for this unit:
+//   result_q      -> cdb_val_o
+//   cdb_pr_rd_q   -> cdb_pr_rd_o
+//   cdb_rob_tag_q -> cdb_rob_tag_o
+//   cdb_valid_q   -> cdb_valid_o
+// Top-level CDB arbitration forwards these to PRF writeback and ROB completion.
+assign cdb_val_o          = result_q;
+assign cdb_pr_rd_o        = cdb_pr_rd_q;
+assign cdb_rob_tag_o      = cdb_rob_tag_q;
+assign cdb_valid_o        = cdb_valid_q;
 
 //-----------------------------------------------------------------
 // less_than_signed: Less than operator (signed)

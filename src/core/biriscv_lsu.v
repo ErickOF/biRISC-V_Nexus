@@ -47,6 +47,16 @@ module biriscv_lsu
     ,input  [  4:0]  opcode_rb_idx_i
     ,input  [ 31:0]  opcode_ra_operand_i
     ,input  [ 31:0]  opcode_rb_operand_i
+    // pr_rd_i:
+    //   Connected from issue/dispatch destination metadata in core top-level.
+    //   Carries the physical destination register for load results.
+    //   Required so CDB/PRF update uses physical rename identity.
+    ,input  [  5:0]  pr_rd_i
+    // rob_tag_i:
+    //   Connected from ROB dispatch tag path in core integration.
+    //   Identifies which ROB entry owns this LSU operation.
+    //   Required so load completion marks the correct ROB slot ready.
+    ,input  [  4:0]  rob_tag_i
     ,input  [ 31:0]  mem_data_rd_i
     ,input           mem_accept_i
     ,input           mem_ack_i
@@ -68,6 +78,22 @@ module biriscv_lsu
     ,output          writeback_valid_o
     ,output [ 31:0]  writeback_value_o
     ,output [  5:0]  writeback_exception_o
+    // cdb_val_o:
+    //   Connected to global CDB value bus arbitration at core top-level.
+    //   Publishes load result / fault address payload.
+    ,output [ 31:0]  cdb_val_o
+    // cdb_pr_rd_o:
+    //   Connected to CDB physical-destination tag bus.
+    //   Identifies PRF destination for load writeback.
+    ,output [  5:0]  cdb_pr_rd_o
+    // cdb_rob_tag_o:
+    //   Connected to CDB ROB-tag bus consumed by ROB completion logic.
+    //   Identifies the ROB entry to mark complete.
+    ,output [  4:0]  cdb_rob_tag_o
+    // cdb_valid_o:
+    //   Connected to CDB valid bus / arbitration.
+    //   Qualifies cdb payload as a real LSU completion event.
+    ,output          cdb_valid_o
     ,output          stall_o
 );
 
@@ -91,6 +117,10 @@ reg          mem_writeback_q;
 reg          mem_flush_q;
 reg          mem_unaligned_e1_q;
 reg          mem_unaligned_e2_q;
+// Registered destination metadata for the outstanding request.
+// Captured at request issue and forwarded through response FIFO.
+reg [  5:0]  mem_pr_rd_q;
+reg [  4:0]  mem_rob_tag_q;
 
 reg          mem_load_q;
 reg          mem_xb_q;
@@ -254,6 +284,8 @@ begin
     mem_writeback_q    <= 1'b0;
     mem_flush_q        <= 1'b0;
     mem_unaligned_e1_q <= 1'b0;
+    mem_pr_rd_q        <= 6'b0;
+    mem_rob_tag_q      <= 5'b0;
     mem_load_q         <= 1'b0;
     mem_xb_q           <= 1'b0;
     mem_xh_q           <= 1'b0;
@@ -271,6 +303,8 @@ begin
     mem_writeback_q    <= 1'b0;
     mem_flush_q        <= 1'b0;
     mem_unaligned_e1_q <= 1'b0;
+    mem_pr_rd_q        <= 6'b0;
+    mem_rob_tag_q      <= 5'b0;
     mem_load_q         <= 1'b0;
     mem_xb_q           <= 1'b0;
     mem_xh_q           <= 1'b0;
@@ -289,6 +323,8 @@ begin
     mem_writeback_q    <= 1'b0;
     mem_flush_q        <= 1'b0;
     mem_unaligned_e1_q <= mem_unaligned_r;
+    mem_pr_rd_q        <= pr_rd_i;
+    mem_rob_tag_q      <= rob_tag_i;
     mem_load_q         <= opcode_valid_i && load_inst_w;
     mem_xb_q           <= req_lb_w | req_sb_w;
     mem_xh_q           <= req_lh_w | req_sh_w;
@@ -325,10 +361,14 @@ wire [31:0] resp_addr_w;
 wire        resp_byte_w;
 wire        resp_half_w;
 wire        resp_signed_w;
+// Response-side metadata replayed from request FIFO.
+// These feed CDB identity outputs at completion.
+wire [ 5:0] resp_pr_rd_w;
+wire [ 4:0] resp_rob_tag_w;
 
 biriscv_lsu_fifo
 #(
-     .WIDTH(36)
+    .WIDTH(47)
     ,.DEPTH(2)
     ,.ADDR_W(1)
 )
@@ -337,12 +377,14 @@ u_lsu_request
      .clk_i(clk_i)
     ,.rst_i(rst_i)
 
+    // Push request attributes and destination metadata when a memory op issues.
     ,.push_i(((mem_rd_o || (|mem_wr_o) || mem_writeback_o || mem_invalidate_o || mem_flush_o) && mem_accept_i) || (mem_unaligned_e1_q && ~delay_lsu_e2_w))
-    ,.data_in_i({mem_addr_q, mem_ls_q, mem_xh_q, mem_xb_q, mem_load_q})
+    ,.data_in_i({mem_rob_tag_q, mem_pr_rd_q, mem_addr_q, mem_ls_q, mem_xh_q, mem_xb_q, mem_load_q})
     ,.accept_o()
 
     ,.valid_o()
-    ,.data_out_o({resp_addr_w, resp_signed_w, resp_half_w, resp_byte_w, resp_load_w})
+    // Pop response attributes and replay destination metadata on completion.
+    ,.data_out_o({resp_rob_tag_w, resp_pr_rd_w, resp_addr_w, resp_signed_w, resp_half_w, resp_byte_w, resp_load_w})
     ,.pop_i(mem_ack_i || mem_unaligned_e2_q)
 );
 
@@ -400,6 +442,15 @@ end
 
 assign writeback_valid_o    = mem_ack_i | mem_unaligned_e2_q;
 assign writeback_value_o    = wb_result_r;
+// CDB connectivity map for LSU completions:
+//   wb_result_r    -> cdb_val_o
+//   resp_pr_rd_w   -> cdb_pr_rd_o
+//   resp_rob_tag_w -> cdb_rob_tag_o
+//   writeback_valid_o -> cdb_valid_o
+assign cdb_valid_o          = writeback_valid_o;
+assign cdb_val_o            = wb_result_r;
+assign cdb_pr_rd_o          = resp_pr_rd_w;
+assign cdb_rob_tag_o        = resp_rob_tag_w;
 
 wire fault_load_align_w     = mem_unaligned_e2_q & resp_load_w;
 wire fault_store_align_w    = mem_unaligned_e2_q & ~resp_load_w;
