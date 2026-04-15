@@ -4,7 +4,7 @@
 #include <systemc.h>
 #include <queue>
 
-#define TB_MEM_MAX_REGIONS    10
+#define TB_MEM_MAX_REGIONS    16
 
 //-----------------------------------------------------------------
 // tb_mem_region: Memory region entity
@@ -97,29 +97,57 @@ public:
 
     bool add_region(uint32_t base, uint32_t size)
     {
+        // Check for overlaps
+        for (int i=0;i<TB_MEM_MAX_REGIONS;i++)
+            if (m_mem[i])
+            {
+                uint32_t e_base = m_mem[i]->get_base();
+                uint32_t e_size = m_mem[i]->get_size();
+                uint32_t e_end = e_base + e_size - 1;
+                uint32_t n_end = base + size - 1;
+                // Check for overlap
+                bool overlap = (base <= e_end && n_end >= e_base);
+                if (overlap)
+                {
+                    // If not completely within existing region, fail
+                    if (!(base >= e_base && n_end <= e_end))
+                        return false;
+                }
+            }
         for (int i=0;i<TB_MEM_MAX_REGIONS;i++)
             if (!m_mem[i])
             {
                 m_mem[i] = new tb_mem_region(base, size);
                 return true;
             }
-            // Detect overlapping regions
-            else if (m_mem[i]->match(base) || m_mem[i]->match(base + size - 1))
-                return false;
         return false;
     }
 
     bool add_region(uint8_t *mem, uint32_t base, uint32_t size)
     {
+        // Check for overlaps
+        for (int i=0;i<TB_MEM_MAX_REGIONS;i++)
+            if (m_mem[i])
+            {
+                uint32_t e_base = m_mem[i]->get_base();
+                uint32_t e_size = m_mem[i]->get_size();
+                uint32_t e_end = e_base + e_size - 1;
+                uint32_t n_end = base + size - 1;
+                // Check for overlap
+                bool overlap = (base <= e_end && n_end >= e_base);
+                if (overlap)
+                {
+                    // If not completely within existing region, fail
+                    if (!(base >= e_base && n_end <= e_end))
+                        return false;
+                }
+            }
         for (int i=0;i<TB_MEM_MAX_REGIONS;i++)
             if (!m_mem[i])
             {
                 m_mem[i] = new tb_mem_region(base, size, mem);
                 return true;
             }
-            // Detect overlapping regions
-            else if (m_mem[i]->match(base) || m_mem[i]->match(base + size - 1))
-                return false;
         return false;
     }
 

@@ -79,6 +79,38 @@ The top (src/top/riscv_top.v) contains;
 * Set SUPPORT_REGFILE_XILINX = 0 to infer a flop based register file.
 * You may need to adjust the cache RAM inference coding style or it may just work....
 
+### Benchmarking with UC Berkeley riscv-benchmarks
+
+This repository supports the `riscv-benchmarks` suite from https://github.com/ucb-bar/riscv-benchmarks using the `tb/tb_top` Verilator/SystemC testbench.
+
+> Note: the benchmark flow uses `tb/tb_top` and Verilator + SystemC as the simulation harness.
+> The CPU core itself is still the Verilog RTL in `src/top/riscv_top.v` and its submodules;
+> SystemC only provides the testbench and signal glue around the Verilated model.
+> The simpler Icarus testbench in `tb/tb_core_icarus` is not the execution path for `riscv-benchmarks`.
+
+Steps:
+
+1. Prepare the benchmark repository:
+
+```bash
+bash scripts/prepare_benchmarks.sh
+```
+
+2. Build the simulation harness and run a selected benchmark:
+
+```bash
+cd tb/tb_top
+make run-benchmark BENCH=dhrystone
+```
+
+3. Run all supported benchmarks:
+
+```bash
+make run-all-benchmarks
+```
+
+The runner automatically builds the benchmark suite for RV32IM and links programs at `0x80000000` to match the testbench reset vector.
+
 #### ASIC
 * Set SUPPORT_REGFILE_XILINX = 0 to infer a flop based register file.
 * Replace cache RAMS (src/dcache/dcache_core_*ram.v, src/icache/icache_*_ram.v)

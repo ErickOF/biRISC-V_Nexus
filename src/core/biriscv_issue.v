@@ -938,9 +938,17 @@ assign csr_opcode_invalid_o     = opcode_a_issue_r && issue_a_invalid_w;
 biriscv_trace_sim
 u_pipe0_dec0_verif
 (
-     .valid_i(pipe0_valid_wb_w)
-    ,.pc_i(pipe0_pc_wb_w)
-    ,.opcode_i(pipe0_opc_wb_w)
+     .clk_i(clk_i)
+    ,.commit_valid0_i(pipe0_valid_wb_w)
+    ,.commit_valid1_i(1'b0)
+    ,.commit_pc0_i(pipe0_pc_wb_w)
+    ,.commit_pc1_i(32'b0)
+    ,.commit_instr0_i(pipe0_opc_wb_w)
+    ,.commit_instr1_i(32'b0)
+    ,.commit_arch_rd0_i(5'b0)
+    ,.commit_arch_rd1_i(5'b0)
+    ,.commit_rd_val0_i(32'b0)
+    ,.commit_rd_val1_i(32'b0)
 );
 
 wire [4:0] v_pipe0_rs1_w = pipe0_opc_wb_w[19:15];
@@ -998,9 +1006,17 @@ endfunction
 biriscv_trace_sim
 u_pipe0_dec1_verif
 (
-     .valid_i(pipe1_valid_wb_w)
-    ,.pc_i(pipe1_pc_wb_w)
-    ,.opcode_i(pipe1_opc_wb_w)
+     .clk_i(clk_i)
+    ,.commit_valid0_i(pipe1_valid_wb_w)
+    ,.commit_valid1_i(1'b0)
+    ,.commit_pc0_i(pipe1_pc_wb_w)
+    ,.commit_pc1_i(32'b0)
+    ,.commit_instr0_i(pipe1_opc_wb_w)
+    ,.commit_instr1_i(32'b0)
+    ,.commit_arch_rd0_i(5'b0)
+    ,.commit_arch_rd1_i(5'b0)
+    ,.commit_rd_val0_i(32'b0)
+    ,.commit_rd_val1_i(32'b0)
 );
 
 wire [4:0] v_pipe1_rs1_w = pipe1_opc_wb_w[19:15];

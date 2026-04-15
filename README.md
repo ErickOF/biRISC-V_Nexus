@@ -108,6 +108,38 @@ Test:
 10. Comparision
 ```
 
+> Note: benchmark support for `riscv-benchmarks` is implemented through the `tb/tb_top` Verilator/SystemC harness. These benchmarks execute the Verilog RTL CPU core via Verilator-generated C++, not via the simpler `tb/tb_core_icarus` Icarus path.
+
+
+#### Running UC Berkeley riscv-benchmarks
+
+This project can execute the `riscv-benchmarks` suite using the `tb/tb_top` simulation harness.
+
+1. Prepare the benchmark repository:
+
+```bash
+cd tb/tb_top
+bash ../../scripts/prepare_benchmarks.sh
+```
+
+2. Run a single benchmark:
+
+```bash
+make run-benchmark BENCH=dhrystone
+```
+
+3. Run all supported benchmarks:
+
+```bash
+make run-all-benchmarks
+```
+
+Required toolchain:
+- `riscv32-unknown-elf-gcc`
+- `riscv32-unknown-elf-objcopy`
+- `make`
+- `git`
+
 #### Configuration
 
 | Param Name                | Valid Range          | Description                                   |

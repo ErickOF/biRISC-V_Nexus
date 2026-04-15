@@ -6,3 +6,8 @@
 *.txt
 *.vcd
 logs/
+tb/tb_top/build
+tb/tb_top/lib
+tb/tb_top/obj
+tb/tb_top/obj_verilated
+tb/tb_top/verilated

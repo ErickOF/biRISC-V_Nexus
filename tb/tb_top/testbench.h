@@ -149,6 +149,16 @@ public:
         m_dcache_mem->rst_in(rst);
         m_dcache_mem->axi_in(mem_d_out);
         m_dcache_mem->axi_out(mem_d_in);
+
+        // Allocate 4MB memory region
+        uint32_t mem_size = 4 * 1024 * 1024;
+        m_icache_mem->add_region(MEM_BASE, mem_size);
+        m_dcache_mem->add_region(m_icache_mem->get_array(MEM_BASE), MEM_BASE, mem_size);
+
+        // Allocate TCM-like memory at 0x00000000
+        uint32_t tcm_size = 64 * 1024;
+        m_icache_mem->add_region(0x00000000, tcm_size);
+        m_dcache_mem->add_region(m_icache_mem->get_array(0x00000000), 0x00000000, tcm_size);
 		
 		verilator_trace_enable("verilator.vcd", m_dut);
     }
@@ -173,19 +183,7 @@ public:
     //-----------------------------------------------------------------
     bool create_memory(uint32_t base, uint32_t size, uint8_t *mem = NULL)
     {
-        base = base & ~(32-1);
-        size = (size + 31) & ~(32-1);
-
-        while (m_icache_mem->valid_addr(base))
-            base += 1;
-
-        while (m_icache_mem->valid_addr(base + size - 1))
-            size -= 1;
-
-        m_icache_mem->add_region(base, size);
-        m_dcache_mem->add_region(m_icache_mem->get_array(base), base, size);
-
-        memset(m_icache_mem->get_array(base), 0, size);
+        // Memory is already allocated in the constructor
         return true;
     }
     //-----------------------------------------------------------------

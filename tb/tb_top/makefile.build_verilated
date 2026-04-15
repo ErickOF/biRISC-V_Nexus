@@ -2,7 +2,7 @@
 # Variables
 ###############################################################################
 VERILATOR_SRC ?= /usr/share/verilator/include
-SYSTEMC_HOME  ?= /usr/local/systemc-2.3.1
+SYSTEMC_HOME  ?= /usr/include
 
 SRC_DIR       ?= verilated/
 OBJ_DIR       ?= obj_verilated/
@@ -13,7 +13,7 @@ LIBNAME       ?= libsyscverilated.a
 # Additional include directories
 INCLUDE_PATH ?=
 INCLUDE_PATH += $(SRC_DIR)
-INCLUDE_PATH += $(SYSTEMC_HOME)/include
+INCLUDE_PATH += $(SYSTEMC_HOME)/sysc
 INCLUDE_PATH += $(VERILATOR_SRC)
 INCLUDE_PATH += $(VERILATOR_SRC)/vltstd
 
@@ -24,7 +24,7 @@ CFLAGS       += -fpic
 CFLAGS       += $(patsubst %,-I%,$(INCLUDE_PATH))
 CFLAGS       += $(EXTRA_CFLAGS)
 
-LIB_OPT      ?= $(SYSTEMC_HOME)/lib-linux64/libsystemc.a
+LIB_OPT      ?= -lsystemc
 
 # SRC / Object list
 src2obj       = $(OBJ_DIR)$(patsubst %$(suffix $(1)),%.o,$(notdir $(1)))
@@ -51,7 +51,7 @@ $(OBJ_DIR) $(LIB_DIR):
 $(foreach src,$(SRC_LIST),$(eval $(call template_c,$(src))))
 
 $(LIB_DIR)$(LIBNAME): $(OBJ) | $(LIB_DIR) 
-	g++ -shared -o $(LIB_DIR)$(LIBNAME) $(LIB_OPT) $(OBJ)
+	ar rcs $(LIB_DIR)$(LIBNAME) $(OBJ)
 
 clean:
 	rm -rf $(LIB_DIR) $(OBJ_DIR)

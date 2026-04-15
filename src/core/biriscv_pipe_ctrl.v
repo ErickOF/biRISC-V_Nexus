@@ -444,17 +444,33 @@ assign csr_wdata_wb_o  = csr_wdata_wb_q;
 biriscv_trace_sim
 u_trace_d
 (
-     .valid_i(issue_valid_i)
-    ,.pc_i(issue_pc_i)
-    ,.opcode_i(issue_opcode_i)
+     .clk_i(clk_i)
+    ,.commit_valid0_i(issue_valid_i)
+    ,.commit_valid1_i(1'b0)
+    ,.commit_pc0_i(issue_pc_i)
+    ,.commit_pc1_i(32'b0)
+    ,.commit_instr0_i(issue_opcode_i)
+    ,.commit_instr1_i(32'b0)
+    ,.commit_arch_rd0_i(5'b0)
+    ,.commit_arch_rd1_i(5'b0)
+    ,.commit_rd_val0_i(32'b0)
+    ,.commit_rd_val1_i(32'b0)
 );
 
 biriscv_trace_sim
 u_trace_wb
 (
-     .valid_i(valid_wb_o)
-    ,.pc_i(pc_wb_o)
-    ,.opcode_i(opcode_wb_o)
+     .clk_i(clk_i)
+    ,.commit_valid0_i(valid_wb_o)
+    ,.commit_valid1_i(1'b0)
+    ,.commit_pc0_i(pc_wb_o)
+    ,.commit_pc1_i(32'b0)
+    ,.commit_instr0_i(opcode_wb_o)
+    ,.commit_instr1_i(32'b0)
+    ,.commit_arch_rd0_i(5'b0)
+    ,.commit_arch_rd1_i(5'b0)
+    ,.commit_rd_val0_i(32'b0)
+    ,.commit_rd_val1_i(32'b0)
 );
 `endif
 

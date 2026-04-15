@@ -16,7 +16,7 @@ INCLUDE_PATH += $(SRC_DIR)
 INCLUDE_PATH += ./verilated
 INCLUDE_PATH += $(VERILATOR_SRC)
 INCLUDE_PATH += $(VERILATOR_SRC)/vltstd
-INCLUDE_PATH += $(SYSTEMC_HOME)/include
+INCLUDE_PATH += $(SYSTEMC_HOME)/sysc
 
 # Dependancies
 LIB_PATH     ?=
@@ -24,11 +24,10 @@ LIB_PATH     += ./lib
 LIBS          = -lsyscverilated -lelf -lbfd
 
 # Flags
-CFLAGS       ?= -fpic -O2
+CFLAGS       ?= -fpic -O2 -std=c++17
 CFLAGS       += $(patsubst %,-I%,$(INCLUDE_PATH))
 CFLAGS       += -DVM_TRACE=1
-LDFLAGS      ?= -O2
-LDFLAGS      += -L$(SYSTEMC_HOME)/lib-linux64 
+LDFLAGS      ?= -O2 -std=c++17
 LDFLAGS      += $(patsubst %,-L%,$(LIB_PATH))
 
 EXTRA_CLEAN_FILES ?=

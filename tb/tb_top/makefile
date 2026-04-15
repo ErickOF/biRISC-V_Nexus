@@ -2,7 +2,7 @@
 ## Tool paths
 ###############################################################################
 VERILATOR_SRC ?= /usr/share/verilator/include
-SYSTEMC_HOME  ?= /usr/local/systemc-2.3.1
+SYSTEMC_HOME  ?= /usr/include
 
 TEST_IMAGE ?= $(abspath ./test.elf)
 
@@ -35,3 +35,5 @@ clean:
 
 run: build
 	./build/test.x -f $(TEST_IMAGE)
+
+-include benchmarks.mk
