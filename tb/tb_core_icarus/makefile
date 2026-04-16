@@ -31,6 +31,7 @@ SRC_V       ?= $(foreach src,$(SRC_V_DIR),$(wildcard $(src)/*.v))
 VFLAGS      += $(patsubst %,-I%,$(SRC_V_DIR))
 VFLAGS      += -DTRACE=$(TRACE)
 VFLAGS      += -Dverilog_sim
+VDEFINES	+= # empty in default mode if nothing was declared
 
 ###############################################################################
 # Variables: Lists of objects, source and deps
@@ -50,7 +51,7 @@ $(BUILD_DIR)/tcm.bin: $(ELF_FILE) | $(BUILD_DIR)
 
 $(BUILD_DIR)/$(EXE): $(SRC_V) | $(BUILD_DIR)
 	@echo "# Compiling verilog"
-	iverilog $(VFLAGS) -o $@ $(SRC_V)
+	iverilog $(VFLAGS) $(VDEFINES) -o $@ $(SRC_V) 
 
 run: $(BUILD_DIR)/$(EXE) $(BUILD_DIR)/tcm.bin
 	vvp $(BUILD_DIR)/$(EXE) -vcd
