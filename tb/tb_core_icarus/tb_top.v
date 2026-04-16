@@ -1,5 +1,27 @@
 module tb_top;
-
+// -----------------------------------------------------------------------------
+// tb_top.v
+// -----------------------------------------------------------------------------
+// Purpose:
+//   Top-level Icarus/SystemVerilog testbench for biRISC-V core bring-up,
+//   OoO-oriented observability and branch prediction testing.
+//
+// Responsibilities:
+//   1) Generate clock/reset.
+//   2) Load test program image into local TCM model.
+//   3) Capture issue/execution/memory logs for debug analysis.
+//   4) Derive commit-side trace signals from internal ROB state.
+//   5) End simulation on explicit PASS signature or watchdog timeout.
+//   6) Optionally instantiate OoO structural assertion checks.
+//
+// PASS contract with software:
+//   - Software writes 0x00000001 to address 0x8001FFFC.
+//   - TB detects this write and calls $finish immediately.
+//
+// Notes:
+//   - Hierarchical references are intentionally used for deep observability.
+//   - This bench prioritizes debug visibility over strict encapsulation.
+// -----------------------------------------------------------------------------
 // Test mode selection: define TEST_MODE_OOO, TEST_MODE_BRANCH, or TEST_MODE_BOTH
 `ifdef TEST_MODE_OOO
 `define ENABLE_OOO
