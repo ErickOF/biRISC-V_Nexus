@@ -31,7 +31,7 @@ SRC_V       ?= $(foreach src,$(SRC_V_DIR),$(wildcard $(src)/*.v))
 VFLAGS      += $(patsubst %,-I%,$(SRC_V_DIR))
 VFLAGS      += -DTRACE=$(TRACE)
 VFLAGS      += -Dverilog_sim
-VDEFINES	+= # empty in default mode if nothing was declared
+VDEFINES	+= -g2012
 
 ###############################################################################
 # Variables: Lists of objects, source and deps

@@ -34,12 +34,12 @@ module biriscv_npc
     ,parameter NUM_BHT_ENTRIES     = 512
     ,parameter NUM_BHT_ENTRIES_W   = 9
     ,parameter RAS_ENABLE          = 1
-    ,parameter GSHARE_ENABLE       = 1   // recommended: enable GShare as global predictor in tournament
+    ,parameter GSHARE_ENABLE       = 0   // recommended: enable GShare as global predictor in tournament
     ,parameter BHT_ENABLE          = 1
     ,parameter NUM_RAS_ENTRIES     = 8
     ,parameter NUM_RAS_ENTRIES_W   = 3
     // Tournament predictor parameters
-    ,parameter TOURNAMENT_ENABLE   = 1
+    ,parameter TOURNAMENT_ENABLE   = 0
     ,parameter NUM_LHT_ENTRIES     = 512  // rows in Local History Table (indexed by PC alias)
     ,parameter NUM_LHT_ENTRIES_W   = 9
     ,parameter NUM_LHR_W           = 10   // local history depth; Local PHT has 2^NUM_LHR_W entries

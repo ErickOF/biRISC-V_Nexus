@@ -39,7 +39,9 @@ module tb_top;
 `endif
 `endif
 
-`define TRACE 1
+`ifndef TRACE
+    `define TRACE 1
+`endif
 
 `ifdef ENABLE_OOO
 `ifdef SVA_CHECKS
@@ -262,7 +264,7 @@ begin
             end
             else if (!exec_log_v1_r &&
                      ((u_dut.mul_opcode_pc_w != exec_log_pc0_r) ||
-                      (u_dut.mul_opcode_pc_w != exec_log_ins0_r)))
+                      (u_dut.mul_opcode_opcode_w != exec_log_ins0_r)))
             begin
                 exec_log_v1_r   = 1'b1;
                 exec_log_pc1_r  = u_dut.mul_opcode_pc_w;
@@ -493,9 +495,9 @@ always @(posedge clk)
 begin
     if (!rst)
     begin
-        if (u_dut.u_issue.pipe0_valid_wb_w)
+        if (u_dut.u_rob_ooo.commit_valid0_o)
             instr_count = instr_count + 1;
-        if (u_dut.u_issue.pipe1_valid_wb_w)
+        if (u_dut.u_rob_ooo.commit_valid1_o)
             instr_count = instr_count + 1;
     end
 end
