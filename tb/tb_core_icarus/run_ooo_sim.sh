@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "Cleaning previous builds, just to avoid unexpected issues if previous build was pointing to testbench in branch mode"
+make clean
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 ASM_FILE="${SCRIPT_DIR}/stress_test_ooo.S"
@@ -10,8 +13,8 @@ LOG_DIR="${BUILD_DIR}/logs"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="${LOG_DIR}/run_ooo_sim_${TIMESTAMP}.log"
 
-RISCV_GCC="${RISCV_GCC:-riscv64-unknown-elf-gcc}"
-RISCV_OBJCOPY="${RISCV_OBJCOPY:-riscv64-unknown-elf-objcopy}"
+RISCV_GCC="${RISCV_GCC:-riscv32-unknown-elf-gcc}"
+RISCV_OBJCOPY="${RISCV_OBJCOPY:-riscv32-unknown-elf-objcopy}"
 
 mkdir -p "${BUILD_DIR}" "${LOG_DIR}"
 
@@ -65,7 +68,7 @@ echo "[2/4] Extracting machine code to HEX -> ${HEX_FILE}"
 
 echo "[3/4] Running simulation with make"
 pushd "${SCRIPT_DIR}" >/dev/null
-make ELF_FILE="${ELF_FILE}" OBJCOPY="${RISCV_OBJCOPY}"
+make ELF_FILE="${ELF_FILE}" OBJCOPY="${RISCV_OBJCOPY}" VDEFINES="-DTEST_MODE_OOO"
 popd >/dev/null
 
 echo "[4/4] Simulation finished"

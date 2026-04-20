@@ -1,11 +1,10 @@
 module tb_top;
-
 // -----------------------------------------------------------------------------
 // tb_top.v
 // -----------------------------------------------------------------------------
 // Purpose:
-//   Top-level Icarus/SystemVerilog testbench for biRISC-V core bring-up and
-//   OoO-oriented observability.
+//   Top-level Icarus/SystemVerilog testbench for biRISC-V core bring-up,
+//   OoO-oriented observability and branch prediction testing.
 //
 // Responsibilities:
 //   1) Generate clock/reset.
@@ -23,17 +22,62 @@ module tb_top;
 //   - Hierarchical references are intentionally used for deep observability.
 //   - This bench prioritizes debug visibility over strict encapsulation.
 // -----------------------------------------------------------------------------
+// Test mode selection: define TEST_MODE_OOO, TEST_MODE_BRANCH, or TEST_MODE_BOTH
+`ifdef TEST_MODE_OOO
+`define ENABLE_OOO
+`endif
+`ifdef TEST_MODE_BRANCH
+`define ENABLE_BRANCH
+`endif
+`ifdef TEST_MODE_BOTH
+`define ENABLE_OOO
+`define ENABLE_BRANCH
+`endif
+`ifndef ENABLE_OOO
+`ifndef ENABLE_BRANCH
+`define ENABLE_BRANCH  // default
+`endif
+`endif
 
+`ifndef TRACE
+    `define TRACE 1
+`endif
+
+`ifdef ENABLE_OOO
 `ifdef SVA_CHECKS
 `include "tb_ooo_assertions.sv"
 `endif
-
+`endif
 reg clk;
 reg rst;
+wire          mem_i_rd_w;
+wire          mem_i_flush_w;
+wire          mem_i_invalidate_w;
+wire [ 31:0]  mem_i_pc_w;
+wire [ 31:0]  mem_d_addr_w;
+wire [ 31:0]  mem_d_data_wr_w;
+wire          mem_d_rd_w;
+wire [  3:0]  mem_d_wr_w;
+wire          mem_d_cacheable_w;
+wire [ 10:0]  mem_d_req_tag_w;
+wire          mem_d_invalidate_w;
+wire          mem_d_writeback_w;
+wire          mem_d_flush_w;
+wire          mem_i_accept_w;
+wire          mem_i_valid_w;
+wire          mem_i_error_w;
+wire [ 63:0]  mem_i_inst_w;
+wire [ 31:0]  mem_d_data_rd_w;
+wire          mem_d_accept_w;
+wire          mem_d_ack_w;
+wire          mem_d_error_w;
+wire [ 10:0]  mem_d_resp_tag_w;
 
 reg [7:0] mem[131072:0];
 integer i;
 integer f;
+
+`ifdef ENABLE_OOO
 integer f_issue_log;
 integer f_exec_log;
 integer f_mem_log;
@@ -50,7 +94,9 @@ reg [63:0] rat_phys_bitmap_r;
 reg [6:0]  rat_allocated_count_r;
 integer    rat_i;
 integer    rat_j;
+`endif
 
+`ifdef ENABLE_OOO
 function [31:0] instr_at_pc;
     input [31:0] pc;
     integer idx;
@@ -79,10 +125,10 @@ begin
         $finish;
     end
 end
+`endif
 
 initial
 begin
-    // Bring-up banner and optional waveform dumping.
     $display("Starting bench");
 
     if (`TRACE)
@@ -91,6 +137,38 @@ begin
         $dumpvars(0, tb_top);
     end
 
+    // Reset
+    clk = 0;
+    rst = 1;
+    repeat (5) @(posedge clk);
+    rst = 0;
+
+    // Load TCM memory
+    for (i=0;i<131072;i=i+1)
+        mem[i] = 0;
+
+    f = $fopenr("./build/tcm.bin");
+    i = $fread(mem, f);
+    for (i=0;i<131072;i=i+1)
+        u_mem.write(i, mem[i]);
+
+`ifdef ENABLE_OOO
+    // Dump loaded memory image to a log for reproducibility/debug.
+    for (i=0;i<131072;i=i+4)
+        $fdisplay(f_mem_log,
+                  "addr=%08x b0=%02x b1=%02x b2=%02x b3=%02x word=%08x",
+                  32'h80000000 + i,
+                  mem[i],
+                  mem[i+1],
+                  mem[i+2],
+                  mem[i+3],
+                  {mem[i+3], mem[i+2], mem[i+1], mem[i]});
+`endif
+end
+
+`ifdef ENABLE_OOO
+initial
+begin
     f_issue_log = $fopen("issue_log.txt", "w");
     f_exec_log  = $fopen("execution_order_log.txt", "w");
     f_mem_log   = $fopen("memory_dump_log.txt", "w");
@@ -104,34 +182,10 @@ begin
     $fdisplay(f_issue_log, "# ISSUE LOG: (dir0, ins0); (dir1, ins1)");
     $fdisplay(f_exec_log,  "# EXECUTION ORDER LOG (EXEC LAUNCH): (dir0, ins0); (dir1, ins1)");
     $fdisplay(f_mem_log,   "# MEMORY DUMP: addr byte0 byte1 byte2 byte3 word");
-
-    // Apply reset for a fixed number of cycles.
-    clk = 0;
-    rst = 1;
-    repeat (5) @(posedge clk);
-    rst = 0;
-
-    // Load binary image into local byte array, then mirror into TCM model.
-    for (i=0;i<131072;i=i+1)
-        mem[i] = 0;
-
-    f = $fopenr("./build/tcm.bin");
-    i = $fread(mem, f);
-    for (i=0;i<131072;i=i+1)
-        u_mem.write(i, mem[i]);
-
-    // Dump loaded memory image to a log for reproducibility/debug.
-    for (i=0;i<131072;i=i+4)
-        $fdisplay(f_mem_log,
-                  "addr=%08x b0=%02x b1=%02x b2=%02x b3=%02x word=%08x",
-                  32'h80000000 + i,
-                  mem[i],
-                  mem[i+1],
-                  mem[i+2],
-                  mem[i+3],
-                  {mem[i+3], mem[i+2], mem[i+1], mem[i]});
 end
+`endif
 
+`ifdef ENABLE_OOO
 always @(posedge clk)
 begin
     if (!rst)
@@ -250,16 +304,17 @@ begin
         end
     end
 end
+`endif
 
 initial
 begin
-    // Free-running 100 MHz equivalent clock (10 time-unit period).
     forever
     begin 
         clk = #5 ~clk;
     end
 end
 
+`ifdef ENABLE_OOO
 // Watchdog to avoid endless simulation when software stays in a terminal loop.
 // Override with: vvp ... +MAX_CYCLES=<N>
 initial
@@ -283,29 +338,7 @@ begin
         end
     end
 end
-
-wire          mem_i_rd_w;
-wire          mem_i_flush_w;
-wire          mem_i_invalidate_w;
-wire [ 31:0]  mem_i_pc_w;
-wire [ 31:0]  mem_d_addr_w;
-wire [ 31:0]  mem_d_data_wr_w;
-wire          mem_d_rd_w;
-wire [  3:0]  mem_d_wr_w;
-wire          mem_d_cacheable_w;
-wire [ 10:0]  mem_d_req_tag_w;
-wire          mem_d_invalidate_w;
-wire          mem_d_writeback_w;
-wire          mem_d_flush_w;
-wire          mem_i_accept_w;
-wire          mem_i_valid_w;
-wire          mem_i_error_w;
-wire [ 63:0]  mem_i_inst_w;
-wire [ 31:0]  mem_d_data_rd_w;
-wire          mem_d_accept_w;
-wire          mem_d_ack_w;
-wire          mem_d_error_w;
-wire [ 10:0]  mem_d_resp_tag_w;
+`endif
 
 riscv_core
 u_dut
@@ -377,6 +410,8 @@ u_mem
     ,.mem_d_resp_tag_o(mem_d_resp_tag_w)
 );
 
+//-----------------------------------------------------------------
+`ifdef ENABLE_OOO
 // Commit-trace signals are derived from internal ROB visibility.
 // This keeps trace output aligned to architectural retirement points.
 wire        commit_valid0_w   = u_dut.u_rob_ooo.commit_valid0_o;
@@ -436,9 +471,89 @@ begin
     for (rat_j = 0; rat_j < 64; rat_j = rat_j + 1)
         rat_allocated_count_r = rat_allocated_count_r + {6'b0, rat_phys_bitmap_r[rat_j]};
 end
+`endif
 
-`ifdef SVA_CHECKS
+//-----------------------------------------------------------------
+`ifdef ENABLE_BRANCH
+// Performance Counters
+//-----------------------------------------------------------------
+integer cycle_count;
+integer instr_count;
+
+initial begin
+    cycle_count = 0;
+    instr_count = 0;
+end
+
+// Count clock cycles after reset
+always @(posedge clk)
+    if (!rst)
+        cycle_count = cycle_count + 1;
+
+// Count retired instructions (pipe 0 + pipe 1 commits)
+always @(posedge clk)
+begin
+    if (!rst)
+    begin
+        if (u_dut.u_rob_ooo.commit_valid0_o)
+            instr_count = instr_count + 1;
+        if (u_dut.u_rob_ooo.commit_valid1_o)
+            instr_count = instr_count + 1;
+    end
+end
+
+// Detect program exit: PC stuck in _exit_loop (infinite jal to self)
+reg [31:0] prev_pc;
+integer    stuck_count;
+
+initial begin
+    prev_pc     = 32'b0;
+    stuck_count = 0;
+end
+
+always @(posedge clk)
+begin
+    if (!rst)
+    begin
+        if (mem_i_pc_w == prev_pc)
+            stuck_count = stuck_count + 1;
+        else
+            stuck_count = 0;
+        prev_pc = mem_i_pc_w;
+
+        // If PC hasn't changed for 100 cycles, program has exited
+        if (stuck_count > 100)
+        begin
+            $display("=== PROGRAM FINISHED (PC stuck at 0x%08x) ===", mem_i_pc_w);
+            $display("========================================");
+            $display("  Total cycles:       %0d", cycle_count);
+            $display("  Total instructions: %0d", instr_count);
+            if (cycle_count > 0)
+                $display("  IPC:                %0f", $itor(instr_count) / $itor(cycle_count));
+            $display("========================================");
+            $finish;
+        end
+    end
+end
+
+// Safety timeout (adjust as needed for larger benchmarks)
+initial begin
+    @(negedge rst);
+    #100000000;
+    $display("=== SIMULATION TIMEOUT ===");
+    $display("========================================");
+    $display("  Total cycles:       %0d", cycle_count);
+    $display("  Total instructions: %0d", instr_count);
+    if (cycle_count > 0)
+        $display("  IPC:                %0f", $itor(instr_count) / $itor(cycle_count));
+    $display("========================================");
+    $finish;
+end
+`endif
+
+`ifdef ENABLE_OOO
 // Optional OoO structural checks; enabled only when SVA_CHECKS is defined.
+`ifdef SVA_CHECKS
 tb_ooo_assertions
 u_ooo_assertions
 (
@@ -461,6 +576,7 @@ u_ooo_assertions
     ,.rob_dispatch_0_i(u_dut.u_rob_ooo.push0_i)
     ,.rob_dispatch_1_i(u_dut.u_rob_ooo.push1_i)
 );
+`endif
 `endif
 
 endmodule

@@ -29,15 +29,20 @@ module biriscv_npc
 //-----------------------------------------------------------------
 #(
      parameter SUPPORT_BRANCH_PREDICTION = 1
-    ,parameter NUM_BTB_ENTRIES  = 32
-    ,parameter NUM_BTB_ENTRIES_W = 5
-    ,parameter NUM_BHT_ENTRIES  = 512
-    ,parameter NUM_BHT_ENTRIES_W = 9
-    ,parameter RAS_ENABLE       = 1
-    ,parameter GSHARE_ENABLE    = 0
-    ,parameter BHT_ENABLE       = 1
-    ,parameter NUM_RAS_ENTRIES  = 8
-    ,parameter NUM_RAS_ENTRIES_W = 3
+    ,parameter NUM_BTB_ENTRIES     = 32
+    ,parameter NUM_BTB_ENTRIES_W   = 5
+    ,parameter NUM_BHT_ENTRIES     = 512
+    ,parameter NUM_BHT_ENTRIES_W   = 9
+    ,parameter RAS_ENABLE          = 1
+    ,parameter GSHARE_ENABLE       = 0   // recommended: enable GShare as global predictor in tournament
+    ,parameter BHT_ENABLE          = 1
+    ,parameter NUM_RAS_ENTRIES     = 8
+    ,parameter NUM_RAS_ENTRIES_W   = 3
+    // Tournament predictor parameters
+    ,parameter TOURNAMENT_ENABLE   = 0
+    ,parameter NUM_LHT_ENTRIES     = 512  // rows in Local History Table (indexed by PC alias)
+    ,parameter NUM_LHT_ENTRIES_W   = 9
+    ,parameter NUM_LHR_W           = 10   // local history depth; Local PHT has 2^NUM_LHR_W entries
 )
 //-----------------------------------------------------------------
 // Ports
@@ -65,7 +70,8 @@ module biriscv_npc
 
 
 
-localparam RAS_INVALID = 32'h00000001;
+localparam RAS_INVALID      = 32'h00000001;
+localparam NUM_LPHT_ENTRIES = (1 << NUM_LHR_W); // 2^NUM_LHR_W entries in Local PHT
 
 //-----------------------------------------------------------------
 // Branch prediction (BTB, BHT, RAS)
@@ -215,6 +221,111 @@ else if (branch_is_not_taken_i && bht_sat_q[bht_wr_entry_w] > 2'd0)
     bht_sat_q[bht_wr_entry_w] <= bht_sat_q[bht_wr_entry_w] - 2'd1;
 
 wire bht_predict_taken_w = BHT_ENABLE && (bht_sat_q[bht_rd_entry_w] >= 2'd2);
+
+//-----------------------------------------------------------------
+// Local History Table (LHT)
+//   NUM_LHT_ENTRIES shift registers, one per PC alias.
+//   Each register is NUM_LHR_W bits wide and records the per-branch
+//   outcome history.  Only confirmed outcomes are shifted in.
+//-----------------------------------------------------------------
+reg [NUM_LHR_W-1:0] lht_q[NUM_LHT_ENTRIES-1:0];
+
+// Read index: same PC-alias formula as bimodal BHT read
+wire [NUM_LHT_ENTRIES_W-1:0] lht_rd_idx_w =
+    {pc_f_i[3+NUM_LHT_ENTRIES_W-2:3], btb_upper_w};
+
+// Write index: PC of the resolving branch
+wire [NUM_LHT_ENTRIES_W-1:0] lht_wr_idx_w =
+    branch_source_i[2+NUM_LHT_ENTRIES_W-1:2];
+
+// Old (pre-shift) local history — used as LPHT write index so that
+// precisely the counter that made the prediction is trained.
+wire [NUM_LHR_W-1:0] lht_wr_old_w = lht_q[lht_wr_idx_w];
+
+integer i5;
+always @ (posedge clk_i or posedge rst_i)
+if (rst_i)
+begin
+    for (i5 = 0; i5 < NUM_LHT_ENTRIES; i5 = i5 + 1)
+        lht_q[i5] <= {NUM_LHR_W{1'b0}};
+end
+else if (branch_is_taken_i || branch_is_not_taken_i)
+    lht_q[lht_wr_idx_w] <=
+        {lht_q[lht_wr_idx_w][NUM_LHR_W-2:0], branch_is_taken_i};
+
+//-----------------------------------------------------------------
+// Local PHT (LPHT) — 2^NUM_LHR_W 2-bit saturating counters
+//   Indexed by the local history register value.
+//-----------------------------------------------------------------
+reg [1:0] lpht_sat_q[NUM_LPHT_ENTRIES-1:0];
+
+// Read: current local history for the fetch PC
+wire [NUM_LHR_W-1:0] lpht_rd_idx_w = lht_q[lht_rd_idx_w];
+
+// Write: old local history (before shift) — trains the counter that
+//        produced the prediction for the resolving branch.
+wire [NUM_LHR_W-1:0] lpht_wr_idx_w = lht_wr_old_w;
+
+integer i6;
+always @ (posedge clk_i or posedge rst_i)
+if (rst_i)
+begin
+    for (i6 = 0; i6 < NUM_LPHT_ENTRIES; i6 = i6 + 1)
+        lpht_sat_q[i6] <= 2'd3; // strongly taken
+end
+else if (branch_is_taken_i && lpht_sat_q[lpht_wr_idx_w] < 2'd3)
+    lpht_sat_q[lpht_wr_idx_w] <= lpht_sat_q[lpht_wr_idx_w] + 2'd1; // weakly taken
+else if (branch_is_not_taken_i && lpht_sat_q[lpht_wr_idx_w] > 2'd0)
+    lpht_sat_q[lpht_wr_idx_w] <= lpht_sat_q[lpht_wr_idx_w] - 2'd1; // weakly not taken
+
+wire local_predict_taken_w = (lpht_sat_q[lpht_rd_idx_w] >= 2'd2);
+
+//-----------------------------------------------------------------
+// Choice / Selector Table (CPHT)
+//   NUM_BHT_ENTRIES 2-bit saturating counters, indexed by PC alias.
+//   sat >= 2  ->  select global predictor (BHT / GShare)
+//   sat <  2  ->  select local  predictor (LHT + LPHT)
+//
+//   Training (Alpha 21264 style): only update when the two predictors
+//   disagree; increment toward whichever was correct.
+//-----------------------------------------------------------------
+reg [1:0] cpht_sat_q[NUM_BHT_ENTRIES-1:0];
+
+// Read index: same bimodal PC alias as global BHT
+wire [NUM_BHT_ENTRIES_W-1:0] cpht_rd_idx_w =
+    {pc_f_i[3+NUM_BHT_ENTRIES_W-2:3], btb_upper_w};
+
+// Write index: PC of the resolving branch
+wire [NUM_BHT_ENTRIES_W-1:0] cpht_wr_idx_w =
+    branch_source_i[2+NUM_BHT_ENTRIES_W-1:2];
+
+// Approximate the prediction each predictor would have made by reading
+// the sat counter at the write index before it is updated this cycle.
+wire global_pred_at_train_w = (bht_sat_q[bht_wr_entry_w]  >= 2'd2);
+wire local_pred_at_train_w  = (lpht_sat_q[lpht_wr_idx_w]  >= 2'd2);
+wire global_correct_w = (global_pred_at_train_w == branch_is_taken_i);
+wire local_correct_w  = (local_pred_at_train_w  == branch_is_taken_i);
+
+integer i7;
+always @ (posedge clk_i or posedge rst_i)
+if (rst_i)
+begin
+    for (i7 = 0; i7 < NUM_BHT_ENTRIES; i7 = i7 + 1)
+        cpht_sat_q[i7] <= 2'd1; // start biased slightly toward local
+end
+else if ((branch_is_taken_i || branch_is_not_taken_i) &&
+         (global_correct_w != local_correct_w))
+begin
+    if (global_correct_w && cpht_sat_q[cpht_wr_idx_w] < 2'd3)
+        cpht_sat_q[cpht_wr_idx_w] <= cpht_sat_q[cpht_wr_idx_w] + 2'd1;
+    else if (local_correct_w && cpht_sat_q[cpht_wr_idx_w] > 2'd0)
+        cpht_sat_q[cpht_wr_idx_w] <= cpht_sat_q[cpht_wr_idx_w] - 2'd1;
+end
+
+// Tournament final direction prediction
+wire tournament_predict_taken_w = TOURNAMENT_ENABLE ?
+    (cpht_sat_q[cpht_rd_idx_w] >= 2'd2 ? bht_predict_taken_w : local_predict_taken_w) :
+    bht_predict_taken_w;
 
 //-----------------------------------------------------------------
 // Branch target buffer
@@ -368,15 +479,19 @@ assign btb_valid_w   = btb_valid_r;
 assign btb_upper_w   = btb_upper_r;
 assign btb_is_call_w = btb_is_call_r;
 assign btb_is_ret_w  = btb_is_ret_r;
-assign next_pc_f_o   = ras_ret_pred_w      ? ras_pc_pred_w : 
-                       (bht_predict_taken_w | btb_is_jmp_r) ? btb_next_pc_r :
+// next_pc_f_o priority:
+//   1. RAS prediction (return instructions)
+//   2. BTB target when tournament says taken, or unconditional jump
+//   3. Fall-through (PC+8, next aligned pair)
+assign next_pc_f_o   = ras_ret_pred_w                                   ? ras_pc_pred_w :
+                       (tournament_predict_taken_w | btb_is_jmp_r)      ? btb_next_pc_r :
                        {pc_f_i[31:3],3'b0} + 32'd8;
 
-assign next_taken_f_o = (btb_valid_w & (ras_ret_pred_w | bht_predict_taken_w | btb_is_jmp_r)) ? 
+assign next_taken_f_o = (btb_valid_w & (ras_ret_pred_w | tournament_predict_taken_w | btb_is_jmp_r)) ?
                         pc_f_i[2] ? {btb_upper_r, 1'b0} :
                         {btb_upper_r, ~btb_upper_r} : 2'b0;
 
-assign pred_taken_w   = btb_valid_w & (ras_ret_pred_w | bht_predict_taken_w | btb_is_jmp_r) & pc_accept_i;
+assign pred_taken_w   = btb_valid_w & (ras_ret_pred_w | tournament_predict_taken_w | btb_is_jmp_r) & pc_accept_i;
 assign pred_ntaken_w  = btb_valid_w & ~pred_taken_w & pc_accept_i;
 
 
